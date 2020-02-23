@@ -12,9 +12,9 @@ from DataGenerator import DataGenerator
 from text_denoiser import denoise_text, replace_contractions
 from torch.utils.data import DataLoader
 
-from NGramLanguageModeler import NGramLanguageModeler
-from CBOW import CBOW
-from GlobalNGramModel import GlobalNGramModel
+from Models.NGramLanguageModeler import NGramLanguageModeler
+from Models.CBOW import CBOW
+from Models.GlobalNGramModel import GlobalNGramModel
 from ModelTrainer import ModelTrainer
 import matplotlib.pyplot as plt
 
