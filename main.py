@@ -20,10 +20,10 @@ from Models.GlobalNGramModel import GlobalNGramModel
 from ModelTrainer import ModelTrainer
 
 
-def train_n_gram(data_generator, embedding_dim):
+def train_n_gram(data_generator, embedding_dim, device):
     training_data = data_generator.generate_n_gram_training_data()
     NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data)
+    text_dataset = TextDataset(training_data, device)
     loader_train = DataLoader(text_dataset, batch_size=32, 
                           sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
                           drop_last=True)
@@ -36,11 +36,11 @@ def train_n_gram(data_generator, embedding_dim):
     return losses
 
 
-def train_cbow(data_generator, embedding_dim):
+def train_cbow(data_generator, embedding_dim, device):
     batch_size = 32
     training_data = data_generator.generate_cbow_training_data()
     NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data)
+    text_dataset = TextDataset(training_data, device)
     loader_train = DataLoader(text_dataset, batch_size=batch_size, 
                           sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
                           drop_last=True)
@@ -53,21 +53,21 @@ def train_cbow(data_generator, embedding_dim):
     return losses, model
 
 
-def train_global_n_gram(data_generator, embedding_dim):
+def train_global_n_gram(data_generator, embedding_dim, device):
     batch_size=32
     training_data = data_generator.generate_global_n_gram_training_data()
     NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data)
+    text_dataset = TextDataset(training_data, device)
     loader_train = DataLoader(text_dataset, batch_size=batch_size, 
                           sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
                           drop_last=True)
 
     loss_function = torch.nn.BCELoss()
-    model = GlobalNGramModel(data_generator.vocab_size, embedding_dim, 2, batch_size)
+    model = GlobalNGramModel(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     trainer = ModelTrainer(model, optimizer, loss_function, loader_train)
-    losses = trainer.train(epochs=40, verbose=True)
-    return losses
+    losses = trainer.train(epochs=10, verbose=True)
+    return losses, model
 
 
 def get_filenames(directory_path):
@@ -130,6 +130,15 @@ def main():
     # 10681, 12014, 13137, 14194, 15794, 17355, 18688, 19559]
     # count_question_lines = 19544
     # sample = None
+    batch_size = 32
+    USE_GPU = True
+    if USE_GPU and torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    print('using device:', device)
+
     embedding_dim = 10
     with open('dataset/small_test.txt', 'r') as file:
         sample = file.read()
@@ -139,14 +148,28 @@ def main():
 
     vocab = Vocabulary(text)
     data_generator = DataGenerator(vocab, window_size=5, is_connection_map=True)
-    losses, model = train_cbow(data_generator, embedding_dim)
+    losses, model = train_global_n_gram(data_generator, embedding_dim, device)
+    # put model into evaluation mode
+    model_path = 'models_weights/global_n_gram.pt'
+    torch.save(model.state_dict(), model_path)
 
+    loaded_model = GlobalNGramModel(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
+    loaded_model.load_state_dict(torch.load(model_path))
+    loaded_model.eval()
+    model.eval()
     accuracy_filename = 'dataset/check_accuracy/questions.txt'
     meta_indices = []
-    questionnaire = Questionnaire(vocab, model, accuracy_filename, meta_indices)
-    accuracy = questionnaire.check_val_accuracy()
-    print(accuracy)
-    # result = questionnaire.get_analogy('atheism', 'christianity', 'atheist')
+    questionnaire_model = Questionnaire(vocab, model, accuracy_filename, 
+    meta_indices, device)
+    questionnaire_loaded_model = Questionnaire(vocab, loaded_model, accuracy_filename, 
+    meta_indices, device)
+    # accuracy = questionnaire.check_val_accuracy()
+    # print(accuracy)
+    result1, distances1 = questionnaire_model.get_analogy('atheism', 'christianity', 'atheist')
+    print(result1)
+    result2, distances2 = questionnaire_loaded_model.get_analogy('atheism', 'christianity', 'atheist')
+    print(result2)
+    if_equal = distances1.equal(distances2)
 
 
 if __name__ == '__main__':

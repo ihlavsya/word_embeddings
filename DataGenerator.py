@@ -1,7 +1,5 @@
-import torch
-from torch.utils.data import Dataset
 import numpy as np
-
+import sys
 from itertools import chain
 
 
@@ -56,7 +54,9 @@ class DataGenerator():
 
     def generate_global_n_gram_training_data(self):
         half_windows_count = self.__fill_in_connection_map_and_get_half_windows_count()  
-        training_data = []
+        tf_idfs_map = {}
+        min_tf_idf = sys.maxsize
+        max_tf_idf = - sys.maxsize - 1
         for key, value in self.connection_map.items():
             context, target = key
             context = self.vocabulary.get_idx(context)
@@ -65,12 +65,22 @@ class DataGenerator():
             eps = 1e-6
             idf = np.log(half_windows_count / (value[0] + eps))
             tf_idf = tf * idf
-            # https://stats.stackexchange.com/questions/70801/how-to-normalize-data-to-0-1-range
-            # use normalization provided above.
-            tanh_tf_idf = np.tanh(tf_idf)         
-            sample = ([context, target], tanh_tf_idf)
-            training_data.append(sample)
+            if tf_idf < min_tf_idf:
+                min_tf_idf = tf_idf
+            if tf_idf > max_tf_idf:
+                max_tf_idf = tf_idf
+            key = (context, target)
+            if key not in tf_idfs_map:
+                tf_idfs_map[key] = tf_idf       
 
+        tf_idfs = np.array(list(tf_idfs_map.values()), dtype=np.float32)
+        normalized_tf_idfs = (tf_idfs - min_tf_idf) / (max_tf_idf - min_tf_idf)
+        training_data = []
+        for i, key in enumerate(tf_idfs_map):
+            context, target = key
+            tf_idf = normalized_tf_idfs[i]
+            sample = ([context, target], tf_idf)
+            training_data.append(sample)
         return training_data
 
     def __fill_in_connection_map_and_get_half_windows_count(self):

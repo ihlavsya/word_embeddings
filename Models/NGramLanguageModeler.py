@@ -5,12 +5,12 @@ class NGramLanguageModeler(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim):
         super(NGramLanguageModeler, self).__init__()
-        self.embeddings = nn.Embedding(vocab_size, embedding_dim)
-        self.linear1 = nn.Linear(embedding_dim, 128)
+        self.embedding_dim = embedding_dim
+        self.embeddings = nn.Embedding(vocab_size, self.embedding_dim)
+        self.linear1 = nn.Linear(self.embedding_dim, 128)
         self.linear2 = nn.Linear(128, vocab_size)
 
     def forward(self, input):
-        #embeds = self.embeddings(inputs).view((1, -1))
         embed = self.embeddings(input)
         out = F.relu(self.linear1(embed))
         out = self.linear2(out)

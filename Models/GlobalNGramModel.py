@@ -9,8 +9,9 @@ class GlobalNGramModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim, half_window, batch_size):
         super(GlobalNGramModel, self).__init__()
         self.batch_size = batch_size
-        self.embeddings = nn.Embedding(vocab_size, embedding_dim)
-        self.linear1 = nn.Linear(2 * embedding_dim, 128)
+        self.embedding_dim = embedding_dim
+        self.embeddings = nn.Embedding(vocab_size, self.embedding_dim)
+        self.linear1 = nn.Linear(2 * self.embedding_dim, 128)
         self.linear2 = nn.Linear(128, 1)
         self.sigmoid = nn.Sigmoid()
 

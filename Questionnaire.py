@@ -5,11 +5,12 @@ from torch.nn import CosineSimilarity
 
 
 class Questionnaire():
-    def __init__(self, vocabulary, model, questions_filename, meta_indices):
+    def __init__(self, vocabulary, model, questions_filename, meta_indices, device):
         self.vocabulary = vocabulary
         self.model = model
         self.questions_filename = questions_filename
         self.meta_indices = meta_indices
+        self.device = device
         self.words_count_in_line = 4
         self.cosine_similarity = CosineSimilarity(dim=1)
 
@@ -55,11 +56,11 @@ class Questionnaire():
     def __get_questionnaire(self, indices):
         lines = self.__get_lines_by_indices(indices)
         questionnaire = torch.zeros((len(lines), self.words_count_in_line, 
-        self.model.embedding_dim), dtype=torch.float32)
+        self.model.embedding_dim), device=self.device, dtype=torch.float32)
         for i, line in enumerate(lines):
             words = self.__get_words_from_line(line)
             words_indices = [self.vocabulary.get_idx(word) for word in words]
-            words_indices = torch.LongTensor(words_indices)
+            words_indices = torch.LongTensor(words_indices, device=self.device)
             with torch.no_grad():
                 embeddings = self.model.embeddings(words_indices)
                 questionnaire[i] = embeddings
@@ -68,7 +69,7 @@ class Questionnaire():
 
     def __get_vocabulary_embeddings(self):
         vocabulary_embeddings = None
-        all_words_indices = torch.LongTensor(self.vocabulary.all_words_indices)
+        all_words_indices = torch.LongTensor(self.vocabulary.all_words_indices, device=self.device)
         with torch.no_grad():
             vocabulary_embeddings = self.model.embeddings(all_words_indices)
             
@@ -116,4 +117,4 @@ class Questionnaire():
         argmax_indices = distances.sort(descending=True).indices
         top_argmax_indices = argmax_indices[:top]
         analogies = [self.vocabulary.get_word(idx.item()) for idx in top_argmax_indices]
-        return analogies
+        return analogies, distances
