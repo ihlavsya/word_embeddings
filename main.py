@@ -4,19 +4,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import os
-from torch.utils.data import sampler
-import torchvision.transforms as T
+from torch.utils.data import sampler, DataLoader
+import matplotlib.pyplot as plt
+from itertools import chain
 
 from TextDataset import TextDataset
 from DataGenerator import DataGenerator
 from text_denoiser import denoise_text, replace_contractions
-from torch.utils.data import DataLoader
+from Vocabulary import Vocabulary
+from Questionnaire import Questionnaire
 
 from Models.NGramLanguageModeler import NGramLanguageModeler
 from Models.CBOW import CBOW
 from Models.GlobalNGramModel import GlobalNGramModel
 from ModelTrainer import ModelTrainer
-import matplotlib.pyplot as plt
+
 
 def train_n_gram(data_generator, embedding_dim):
     training_data = data_generator.generate_n_gram_training_data()
@@ -44,11 +46,11 @@ def train_cbow(data_generator, embedding_dim):
                           drop_last=True)
 
     loss_function = torch.nn.NLLLoss()
-    model = CBOW(data_generator.vocab_size, embedding_dim, 2, batch_size)
+    model = CBOW(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     trainer = ModelTrainer(model, optimizer, loss_function, loader_train)
-    losses = trainer.train(epochs=40, verbose=True)
-    return losses
+    losses = trainer.train(epochs=10, verbose=True)
+    return losses, model
 
 
 def train_global_n_gram(data_generator, embedding_dim):
@@ -122,25 +124,30 @@ def train_everything_and_save(text):
 
 
 def main():
-    # prepare_data()
-    # torch.manual_seed(17)   
-    sample = None
-    # embedding_dim = 10
+    # accuracy_filename = 'dataset/check_accuracy/questions-words.txt'
+    # count_meta_lines = 15
+    # meta_lines_indices = [0, 1, 508, 5034, 5900, 8368, 8875, 9868,
+    # 10681, 12014, 13137, 14194, 15794, 17355, 18688, 19559]
+    # count_question_lines = 19544
+    # sample = None
+    embedding_dim = 10
     with open('dataset/small_test.txt', 'r') as file:
         sample = file.read()
 
     denoised_sample = denoise_text(sample)
     text = replace_contractions(denoised_sample)
 
-    # cifar10_val = dset.CIFAR10('./cs231n/datasets', train=True, transform=transform)
-    # loader_val = DataLoader(cifar10_val, batch_size=64, 
-    #                     sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN, 50000)))
+    vocab = Vocabulary(text)
+    data_generator = DataGenerator(vocab, window_size=5, is_connection_map=True)
+    losses, model = train_cbow(data_generator, embedding_dim)
 
-    # cifar10_test = dset.CIFAR10('./cs231n/datasets', train=False, transform=transform)
-    # loader_test = DataLoader(cifar10_test, batch_size=64)
-    # it`s better to do everything in batch
-    # train_everything_and_save(text)
-    
+    accuracy_filename = 'dataset/check_accuracy/questions.txt'
+    meta_indices = []
+    questionnaire = Questionnaire(vocab, model, accuracy_filename, meta_indices)
+    accuracy = questionnaire.check_val_accuracy()
+    print(accuracy)
+    # result = questionnaire.get_analogy('atheism', 'christianity', 'atheist')
+
 
 if __name__ == '__main__':
     main()
