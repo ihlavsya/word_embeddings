@@ -5,71 +5,39 @@ from torch.nn import CosineSimilarity
 
 
 class Questionnaire():
-    def __init__(self, vocabulary, model, questions_filename, meta_indices, device):
-        self.vocabulary = vocabulary
+    def __init__(self, questions_parser, model):
+        self.questions_parser = questions_parser
         self.model = model
-        self.questions_filename = questions_filename
-        self.meta_indices = meta_indices
-        self.device = device
-        self.words_count_in_line = 4
+        self.vocabulary = self.questions_parser.vocabulary
         self.cosine_similarity = CosineSimilarity(dim=1)
-
-        self.lines = self.__get_lines_from_file()
-        self.non_meta_indices = self.__get_non_meta_indices()
-        self.count_questions = len(self.lines) - len(self.meta_indices)
-        indices = random.choice(self.non_meta_indices, 
-        self.count_questions, replace=False)
-        first_half = self.count_questions // 2
-        val_indices = indices[:first_half]
-        test_indices = indices[first_half:]
-        self.val_questionnaire = self.__get_questionnaire(val_indices)
-        self.test_questionnaire = self.__get_questionnaire(test_indices)
+        a = self.questions_parser.meta_indices
+        indices = random.choice(self.questions_parser.non_meta_indices, 
+        self.questions_parser.questions_count, replace=False)
+        first_half = self.questions_parser.questions_count // 2
+        self.val_indices = indices[:first_half]
+        self.test_indices = indices[first_half:]
+        self.val_questionnaire = self.__get_questionnaire(self.val_indices)
+        self.test_questionnaire = self.__get_questionnaire(self.test_indices)
         self.__vocabulary_embeddings = self.__get_vocabulary_embeddings()
 
-    def __get_non_meta_indices(self):
-        # add fake meta_idx
-        exclude_ids = self.meta_indices + [len(self.lines)]
-        indices = []
-        start = 0
-        for exclude_ind in exclude_ids:
-            partial_range = range(start, exclude_ind)
-            indices.extend(partial_range)
-            start = exclude_ind + 1
-
-        return indices
-
-    def __get_lines_from_file(self):
-        lines = None
-        with open(self.questions_filename, 'r') as file:
-            lines = file.readlines()
-
-        return lines
-
-    def __get_words_from_line(self, line):
-        words = line.strip('\n').split(' ')
-        return words
-
-    def __get_lines_by_indices(self, indices):
-        lines = [self.lines[idx] for idx in indices]
-        return lines
+    def update_model_and_embeddings(self, model):
+        self.model = model
+        self.val_questionnaire = self.__get_questionnaire(self.val_indices)
+        self.test_questionnaire = self.__get_questionnaire(self.test_indices)
+        self.__vocabulary_embeddings = self.__get_vocabulary_embeddings()
 
     def __get_questionnaire(self, indices):
-        lines = self.__get_lines_by_indices(indices)
-        questionnaire = torch.zeros((len(lines), self.words_count_in_line, 
-        self.model.embedding_dim), device=self.device, dtype=torch.float32)
-        for i, line in enumerate(lines):
-            words = self.__get_words_from_line(line)
-            words_indices = [self.vocabulary.get_idx(word) for word in words]
-            words_indices = torch.LongTensor(words_indices, device=self.device)
-            with torch.no_grad():
-                embeddings = self.model.embeddings(words_indices)
-                questionnaire[i] = embeddings
+        # maybe you can simply vectorize it?
+        word_to_idx_table = self.questions_parser.get_line_words_indices(indices)
+        word_to_idx_table = torch.tensor(word_to_idx_table, dtype=torch.long)
+        with torch.no_grad():
+            questionnaire = self.model.embeddings(word_to_idx_table)
 
         return questionnaire
 
     def __get_vocabulary_embeddings(self):
         vocabulary_embeddings = None
-        all_words_indices = torch.LongTensor(self.vocabulary.all_words_indices, device=self.device)
+        all_words_indices = torch.tensor(self.vocabulary.all_words_indices, device=self.model.device)
         with torch.no_grad():
             vocabulary_embeddings = self.model.embeddings(all_words_indices)
             

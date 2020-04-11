@@ -3,12 +3,13 @@ import torch.nn.functional as F
 
 class NGramLanguageModeler(nn.Module):
 
-    def __init__(self, vocab_size, embedding_dim):
+    def __init__(self, vocab_size, embedding_dim, device):
         super(NGramLanguageModeler, self).__init__()
+        self.device = device
         self.embedding_dim = embedding_dim
-        self.embeddings = nn.Embedding(vocab_size, self.embedding_dim)
-        self.linear1 = nn.Linear(self.embedding_dim, 128)
-        self.linear2 = nn.Linear(128, vocab_size)
+        self.embeddings = nn.Embedding(vocab_size, self.embedding_dim).to(self.device)
+        self.linear1 = nn.Linear(self.embedding_dim, 128).to(self.device)
+        self.linear2 = nn.Linear(128, vocab_size).to(self.device)
 
     def forward(self, input):
         embed = self.embeddings(input)

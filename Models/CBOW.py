@@ -6,8 +6,9 @@ import torch.optim as optim
 
 class CBOW(nn.Module):
 
-    def __init__(self, vocab_size, embedding_dim, half_window, batch_size):
+    def __init__(self, vocab_size, embedding_dim, half_window, batch_size, device):
         super(CBOW, self).__init__()
+        self.device = device
         self.embedding_dim = embedding_dim
         self.batch_size = batch_size
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)

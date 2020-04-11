@@ -1,175 +1,92 @@
-import numpy as np
-import nltk
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import os
 from torch.utils.data import sampler, DataLoader
 import matplotlib.pyplot as plt
-from itertools import chain
+import pickle
+import psutil
 
-from TextDataset import TextDataset
-from DataGenerator import DataGenerator
+import settings
 from text_denoiser import denoise_text, replace_contractions
+from TextDataset import TextDataset
+from data_generators.CbowDataGenerator import CbowDataGenerator
+from data_generators.NGramDataGenerator import NGramDataGenerator
+from data_generators.GlobalNGramDataGenerator import GlobalNGramDataGenerator
 from Vocabulary import Vocabulary
-from Questionnaire import Questionnaire
-
+from CorpusStorage import CorpusStorage
 from Models.NGramLanguageModeler import NGramLanguageModeler
-from Models.CBOW import CBOW
-from Models.GlobalNGramModel import GlobalNGramModel
-from ModelTrainer import ModelTrainer
+from QuestionsParser import QuestionsParser
+from Questionnaire import Questionnaire
+from trainer_helpers import find_hyperparams, train_global_n_gram, train_n_gram
+import utils
 
 
-def train_n_gram(data_generator, embedding_dim, device):
-    training_data = data_generator.generate_n_gram_training_data()
-    NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data, device)
-    loader_train = DataLoader(text_dataset, batch_size=32, 
-                          sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
-                          drop_last=True)
+def write_generator(data_generator, path):
+    with open(path, 'wb') as f:
+        pickle.dump(data_generator, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    loss_function = torch.nn.NLLLoss()
-    model = NGramLanguageModeler(data_generator.vocab_size, embedding_dim)
-    optimizer = optim.Adam(model.parameters(), lr=0.0005)
-    trainer = ModelTrainer(model, optimizer, loss_function, loader_train)
-    losses = trainer.train(epochs=40, verbose=True)
-    return losses
-
-
-def train_cbow(data_generator, embedding_dim, device):
-    batch_size = 32
-    training_data = data_generator.generate_cbow_training_data()
-    NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data, device)
-    loader_train = DataLoader(text_dataset, batch_size=batch_size, 
-                          sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
-                          drop_last=True)
-
-    loss_function = torch.nn.NLLLoss()
-    model = CBOW(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    trainer = ModelTrainer(model, optimizer, loss_function, loader_train)
-    losses = trainer.train(epochs=10, verbose=True)
-    return losses, model
-
-
-def train_global_n_gram(data_generator, embedding_dim, device):
-    batch_size=32
-    training_data = data_generator.generate_global_n_gram_training_data()
-    NUM_TRAIN = len(training_data)
-    text_dataset = TextDataset(training_data, device)
-    loader_train = DataLoader(text_dataset, batch_size=batch_size, 
-                          sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)),
-                          drop_last=True)
-
-    loss_function = torch.nn.BCELoss()
-    model = GlobalNGramModel(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    trainer = ModelTrainer(model, optimizer, loss_function, loader_train)
-    losses = trainer.train(epochs=10, verbose=True)
-    return losses, model
-
-
-def get_filenames(directory_path):
-    filenames = []
-    for root, dirs, files in os.walk(directory_path):
-        for name in files:
-            if not name.startswith('.'):
-                filenames.append(os.path.join(root, name))
-    return filenames
-
-
-def write_into_one_big_file(out_filename, in_filenames):
-    prefix = ('From:', 'Subject:', 'Organization:', 'Lines:', 'In article')
-    with open(out_filename, 'w') as outfile:
-        for name in in_filenames:
-            with open(name, 'r') as infile:
-                text = []
-                try:
-                    for line in infile:
-                        if not line.startswith(prefix):
-                            text.append(line)
-                except UnicodeDecodeError as e:
-                    print(e)
-                    print(name)
-                    continue
-                # remove author
-                outfile.writelines(text[:-3])
-
-
-def prepare_data():
-    dir_path = 'dataset/20news-bydate'
-    filenames = get_filenames(dir_path)
-    write_into_one_big_file('dataset/train.txt', filenames)
-
-
-def plot_losses(losses):
-    plt.plot(losses)
-    plt.show()
-
-def train_everything_and_save(text):
-    embedding_dim = 10
-    data_generator = DataGenerator(text, window_size=5, is_connection_map=True)
-    #losses1 = train_global_n_gram(data_generator, embedding_dim)
-    print('1st loss done')
-    #losses2 = train_n_gram(data_generator, embedding_dim)
-    print('2nd loss done')
-    losses3 = train_cbow(data_generator, embedding_dim)
-    print('3rd loss done')
-
-    #np.savetxt('losses1.txt', np.array(losses1), delimiter=',')
-    plot_losses(losses3)
-    #np.savetxt('losses2.txt', np.array(losses2), delimiter=',')
-    #np.savetxt('losses3.txt', np.array(losses3), delimiter=',')
-
-
+    print('writing finished')
+   
 def main():
-    # accuracy_filename = 'dataset/check_accuracy/questions-words.txt'
-    # count_meta_lines = 15
-    # meta_lines_indices = [0, 1, 508, 5034, 5900, 8368, 8875, 9868,
-    # 10681, 12014, 13137, 14194, 15794, 17355, 18688, 19559]
-    # count_question_lines = 19544
-    # sample = None
-    batch_size = 32
-    USE_GPU = True
-    if USE_GPU and torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
+    # if settings.USE_GPU and torch.cuda.is_available():
+    #     device = torch.device('cuda')
+    # else:
+    #     device = torch.device('cpu')
 
-    print('using device:', device)
+    # print('using device:', device)
 
-    embedding_dim = 10
-    with open('dataset/small_test.txt', 'r') as file:
-        sample = file.read()
+    # with open('dataset/test.txt', 'r') as file:
+    #     sample = file.read()
+    # corpus_storage = CorpusStorage(sample)
+    # with open(settings.test_corpus_storage_path, 'wb') as f:
+    #     pickle.dump(corpus_storage, f, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(settings.test_corpus_storage_path, 'rb') as f:
+        corpus_storage = pickle.load(f)
 
-    denoised_sample = denoise_text(sample)
-    text = replace_contractions(denoised_sample)
+    vocabulary = Vocabulary(corpus_storage.corpus)
 
-    vocab = Vocabulary(text)
-    data_generator = DataGenerator(vocab, window_size=5, is_connection_map=True)
-    losses, model = train_global_n_gram(data_generator, embedding_dim, device)
-    # put model into evaluation mode
-    model_path = 'models_weights/global_n_gram.pt'
-    torch.save(model.state_dict(), model_path)
+    # with open(settings.test_vocabulary_path, 'wb') as f:
+    #     pickle.dump(vocabulary, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    loaded_model = GlobalNGramModel(data_generator.vocabulary.vocab_size, embedding_dim, 2, batch_size)
-    loaded_model.load_state_dict(torch.load(model_path))
-    loaded_model.eval()
-    model.eval()
-    accuracy_filename = 'dataset/check_accuracy/questions.txt'
-    meta_indices = []
-    questionnaire_model = Questionnaire(vocab, model, accuracy_filename, 
-    meta_indices, device)
-    questionnaire_loaded_model = Questionnaire(vocab, loaded_model, accuracy_filename, 
-    meta_indices, device)
-    # accuracy = questionnaire.check_val_accuracy()
-    # print(accuracy)
-    result1, distances1 = questionnaire_model.get_analogy('atheism', 'christianity', 'atheist')
-    print(result1)
-    result2, distances2 = questionnaire_loaded_model.get_analogy('atheism', 'christianity', 'atheist')
-    print(result2)
-    if_equal = distances1.equal(distances2)
+    questions_parser = QuestionsParser(vocabulary, settings.test_questions_filename, [])
+    # with open(settings.test_questions_parser_path, 'wb') as f:
+    #     pickle.dump(questions_parser, f, protocol=pickle.HIGHEST_PROTOCOL)      
+
+    cbow_data_generator = CbowDataGenerator(vocabulary, corpus_storage.corpus, window_size=5)
+    pass
+    # write_generator(cbow_data_generator, settings.test_cbow_data_generator_path)
+    # n_gram_data_generator = NGramDataGenerator(vocabulary, corpus_storage.corpus, window_size=5)
+    # write_generator(n_gram_data_generator, settings.test_n_gram_data_generator_path)
+    # print('n-gram done')
+    # global_n_gram_data_generator = GlobalNGramDataGenerator(vocabulary, corpus_storage.corpus, window_size=5)
+    # write_generator(global_n_gram_data_generator, settings.test_global_n_gram_data_generator_path)
+    # print('global-n-gram done')
+    # # print('train done')
+    # step_size = 2
+    # best_val, best_model, best_stats, results = find_hyperparams(5, train_n_gram, vocabulary, 
+    # settings.embedding_dim, device, step_size)
+    # if settings.USE_GPU and torch.cuda.is_available():
+    #     device = torch.device('cuda')
+    # else:
+    #     device = torch.device('cpu')
+
+    # d = dict(psutil.virtual_memory()._asdict())
+    # print(d)
+
+    # with open(settings.test_n_gram_data_generator_path, 'rb') as f:
+    #     data_generator = pickle.load(f)
+    # a = data_generator.vocabulary.vocab_size
+    # d = dict(psutil.virtual_memory()._asdict())
+    # print(d)
+
+    # with open(settings.test_questions_parser_path, 'rb') as f:
+    #     questions_parser = pickle.load(f)
+    # b = questions_parser.vocabulary.vocab_size
+    # lr = 10**(-1.5)
+    # gamma = 10**(-0.05)
+    # step_size = 15
+    # model_path = 'models_weights/n_gram'
+    # train_losses, val_accuracies, model = train_n_gram(data_generator, questions_parser, settings.embedding_dim, device, lr,
+    # gamma, step_size, model_path)
+
 
 
 if __name__ == '__main__':
